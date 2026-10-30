@@ -12,7 +12,7 @@
 \usepackage[T1]{fontenc}
 \usepackage[spanish,es-tabla]{babel}
 \usepackage{mathptmx}                       % fuente tipo Times
-\usepackage[margin=1.35in]{geometry}
+\usepackage[margin=1.25in]{geometry}
 \usepackage{graphicx,amsmath,amssymb,xcolor,float,titlesec,enumitem,caption}
 \usepackage[authoryear,round]{natbib}
 \usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=cyan]{hyperref}
@@ -73,12 +73,13 @@ la oclusión del animal importan, y construimos un módulo que convierte las det
 % ---------------------------------------------------------------------
 \section{Trabajos relacionados}
 % ---------------------------------------------------------------------
-\citet{norouzzadeh2018} entrenan redes profundas sobre Snapshot Serengeti para identificar, contar y describir animales, y \citet{beery2019pipeline} proponen
-un flujo de revisión donde un detector general filtra las fotos vacías antes de clasificar. El conjunto que usamos, Caltech Camera Traps, viene de
+\citet{norouzzadeh2018} entrenan redes profundas sobre Snapshot Serengeti para identificar, contar y describir animales, con más de 93.8\,\% de exactitud al identificar especies. El conjunto que usamos, Caltech Camera Traps, viene de
 \citet{beery2018terra}, quienes lo publicaron justamente para medir la generalización a cámaras no vistas y reportaron una caída fuerte de desempeño.
 
+En Latinoamérica ya hay trabajos con cámaras trampa y redes profundas. \citet{suing2023} comparan YOLOv4, Faster R-CNN y varias CNN de clasificación con 1,500 fotos de cinco especies del Parque Nacional Podocarpus (Ecuador); YOLOv4 llegó a un AP total de 76.42\,\% y el mejor clasificador (VGG-19) a 97.6\,\% de exactitud. \citet{montenegro2024choco} presentan una tesis de maestría en IA de la Universidad San Francisco de Quito que detecta y clasifica seis especies en la Reserva Canandé, en el bosque del Chocó ecuatoriano. \citet{marticorena2025} comparan YOLOv8n, YOLO11n y YOLO11s con 5,605 imágenes de ocho categorías de mamíferos del sudoeste bonaerense (Argentina) y reportan un mAP@0.5 de 0.961 con YOLO11s. Su partición es aleatoria por imagen y no incluye fotos vacías, así que esas cifras no son comparables con las nuestras, que separan por secuencia y por cámara.
+
 Como detector usamos YOLO \citep{redmon2016yolo}, que predice cajas y clases en una sola pasada por la red. Trabajamos con la implementación de Ultralytics para
-YOLOv8 \citep{jocher2023ultralytics}, y YOLOv9 \citep{wang2024yolov9} sería la alternativa natural. Las métricas son las de COCO \citep{lin2014coco}.
+YOLOv8 \citep{jocher2023ultralytics}. Las métricas son las de COCO \citep{lin2014coco}.
 
 El desbalance entre especies es típico de estas colecciones: unas pocas dominan y muchas tienen apenas decenas de fotos. Para las clases raras usamos
 \emph{repeat factor sampling} \citep{gupta2019lvis}, que repite más veces las imágenes que contienen clases poco frecuentes. Para ver en qué se fija la red usamos
@@ -189,7 +190,7 @@ cámaras nuevas), mientras que \emph{bird} (0.091), \emph{rodent} (0.007) y \emp
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.62\linewidth]{ap_vs_train_instances_test_unseen.png}
+\includegraphics[width=0.5\linewidth]{ap_vs_train_instances_test_unseen.png}
 \caption{AP@0.5 por especie frente a las instancias de entrenamiento (escala logarítmica), cámaras nuevas.}\label{fig:apn}
 \end{figure}
 
@@ -200,11 +201,11 @@ estos APs son muy ruidosos.
 
 \subsection{Generalización a cámaras nuevas}
 El mAP@0.5 cae 45.0\,\% y el mAP@0.5:0.95 cae 47.0\,\% (Tabla~\ref{tab:resumen}, Figura~\ref{fig:gap}); el recall a confianza 0.25 cae de 0.936 a 0.739 ($-$21.1\,\%). Entre las
-10 cámaras nuevas el mAP@0.5 va desde 0.324 (cámara 40) hasta 0.833 (cámara 7), así que la brecha no es uniforme: depende mucho de qué cámara toque.
+10 cámaras nuevas el mAP@0.5 va desde 0.324 (cámara 40) hasta 0.833 (cámara 7), así que la brecha no es uniforme: depende mucho de qué cámara toque. Para ponerlo en perspectiva, \citet{marticorena2025} reportan un mAP@0.5 de 0.961 con una partición aleatoria de imágenes; nuestro 0.841 (cámaras vistas, partición por secuencia) y 0.462 (cámaras nuevas) muestran cuánto depende la cifra del protocolo de evaluación.
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.52\linewidth]{generalization_gap.png}
+\includegraphics[width=0.42\linewidth]{generalization_gap.png}
 \caption{Desempeño en ubicaciones vistas y nuevas.}\label{fig:gap}
 \end{figure}
 
@@ -242,7 +243,7 @@ no podemos concluir que el fondo explique la caída entre cámaras. Con 24 imág
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.85\linewidth]{robustness_groups.png}
+\includegraphics[width=0.72\linewidth]{robustness_groups.png}
 \caption{mAP@0.5 por grupo de tamaño y de oclusión estimada.}\label{fig:rob}
 \end{figure}
 
@@ -262,7 +263,7 @@ y la Tabla~\ref{tab:monitoreo} compara los totales con las cajas reales. El repo
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.95\linewidth]{actividad_camara100.png}
+\includegraphics[width=0.88\linewidth]{actividad_camara100.png}
 \caption{Individuos detectados por especie y semana en la cámara 100 (no vista en el entrenamiento).}\label{fig:act}
 \end{figure}
 

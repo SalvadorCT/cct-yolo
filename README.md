@@ -109,5 +109,5 @@ Nuestra corrida: GPU A100, 30 épocas, lote 32, 1.14 h. Los datos y los pesos (`
 
 ## Datos y referencias
 
-Caltech Camera Traps, LILA BC. Beery, Van Horn y Perona, *Recognition in Terra Incognita*, ECCV 2018 (<https://arxiv.org/abs/1807.04975>).
+Caltech Camera Traps, LILA BC. Beery, Van Horn y Perona, *Recognition in Terra Incognita*, ECCV 2018 (<https://openaccess.thecvf.com/content_ECCV_2018/html/Beery_Recognition_in_Terra_ECCV_2018_paper.html>).
 La lista completa de referencias está en `report/refs.bib`.
