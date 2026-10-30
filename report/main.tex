@@ -1,0 +1,148 @@
+% =====================================================================
+% Informe - Pregunta 3: Monitoreo de fauna silvestre con camaras trampa (YOLO)
+% Compilar en Overleaf (pdfLaTeX + BibTeX). Los \TODO{} se reemplazan con los
+% numeros que salen de reports/tables/*.csv del notebook de Colab.
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-tabla]{babel}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx,booktabs,amsmath,hyperref,xcolor,float}
+
+% marcador visible para lo que falta llenar
+\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
+\graphicspath{{figures/}}
+
+\title{Monitoreo de fauna silvestre con c\'amaras trampa:\\ detecci\'on con YOLO en Caltech Camera Traps}
+\author{Salvador L.\ C.\ T. \\ Maestr\'ia en Inteligencia Artificial, UNI}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Se entrena un detector YOLOv8 sobre Caltech Camera Traps (CCT-20) y se estudia qu\'e tan bien generaliza a c\'amaras que nunca vio,
+c\'omo se ve afectado por el desbalance de especies, la oclusi\'on y el tama\~no del animal, y c\'omo puede usarse para generar reportes de
+actividad por especie. En ubicaciones nuevas el mAP@0.5 pasa de \TODO{X} a \TODO{Y}, y el an\'alisis con Grad-CAM \TODO{indica / no indica}
+que parte de la se\~nal viene del fondo.
+\end{abstract}
+
+% ---------------------------------------------------------------------
+\section{Motivaci\'on}
+% ---------------------------------------------------------------------
+Las c\'amaras trampa generan millones de fotos y la mayor\'ia no tiene animales. Revisarlas a mano es el cuello de botella del monitoreo de
+fauna \cite{norouzzadeh2018,tabak2019mlwic}. Un detector permite descartar fotos vac\'ias, contar individuos y alertar sobre especies
+prioritarias, pero solo sirve si funciona en c\'amaras nuevas, que es justo donde falla \cite{beery2018terra}. Este trabajo prueba eso de forma
+expl\'icita con la partici\'on oficial de ubicaciones, y a\~nade un m\'odulo que convierte detecciones en tablas de actividad ecol\'ogica.
+
+% ---------------------------------------------------------------------
+\section{Trabajos relacionados}
+% ---------------------------------------------------------------------
+\paragraph{Clasificaci\'on y detecci\'on en c\'amaras trampa.}
+Norouzzadeh et al.\ \cite{norouzzadeh2018} identifican, cuentan y describen animales con redes profundas en Snapshot Serengeti, y Tabak et al.\
+\cite{tabak2019mlwic} muestran la utilidad ecol\'ogica de estos clasificadores. Beery et al.\ \cite{beery2018terra} introducen Caltech Camera Traps y
+documentan la ca\'ida de desempe\~no en c\'amaras no vistas (\emph{terra incognita}); su pipeline posterior \cite{beery2019pipeline} usa un detector
+general para filtrar vac\'ias antes de clasificar.
+\paragraph{Detectores de una etapa.}
+YOLO \cite{redmon2016yolo} predice cajas y clases en una sola pasada; las versiones recientes (YOLOv8 \cite{jocher2023ultralytics},
+YOLOv9 \cite{wang2024yolov9}) mejoran el cuello de agregaci\'on y la asignaci\'on de etiquetas. Evaluamos con las m\'etricas de COCO \cite{lin2014coco}.
+\paragraph{Desbalance y explicabilidad.}
+Para clases raras usamos \emph{repeat factor sampling} \cite{gupta2019lvis}. Para inspeccionar en qu\'e se fija la red usamos Grad-CAM
+\cite{selvaraju2017gradcam}.
+
+% ---------------------------------------------------------------------
+\section{Metodolog\'ia}
+% ---------------------------------------------------------------------
+\subsection{Datos y particiones}
+Usamos CCT-20 (\TODO{n} im\'agenes con cajas, \TODO{k} especies, im\'agenes reducidas a 1024\,px). La partici\'on oficial define \texttt{eccv\_train}
+(ubicaciones de entrenamiento) y \texttt{eccv\_val} (ubicaciones nuevas). De \texttt{eccv\_train} apartamos validaci\'on y un
+\texttt{test\_seen} del 10\,\% cada uno, \emph{por secuencia}, porque los cuadros de una misma r\'afaga son casi id\'enticos y separarlos por
+imagen filtrar\'ia informaci\'on. \texttt{eccv\_val} es nuestro \texttt{test\_unseen}.
+\subsection{Detector y decisiones de entrenamiento}
+Ajustamos \TODO{YOLOv8s} preentrenado en COCO, \TODO{60} \'epocas, resoluci\'on 640\,px (las fotos son 4:3 a 1024\,px; por debajo de eso los animales
+peque\~nos se pierden), coseno de tasa de aprendizaje y parada temprana. \emph{Aumentos:} color (HSV), traslaci\'on y escala moderadas, giro horizontal,
+mosaico y borrado aleatorio; comparamos contra un \emph{baseline} con solo giro horizontal (Tabla~\ref{tab:aug}). \emph{Im\'agenes vac\'ias:} se
+conservan como fondo (etiqueta vac\'ia), submuestreadas a \TODO{25\,\%} en entrenamiento para que no dominen, y completas en evaluaci\'on para medir
+falsos positivos. \emph{Desbalance:} \emph{repeat factor sampling} con umbral \TODO{0.15}.
+\subsection{Evaluaci\'on}
+mAP@0.5 y mAP@0.5:0.95 por especie y promedio, con umbral de confianza muy bajo (0.001) como es costumbre, y recall a confianza operativa 0.25.
+\subsection{Generalizaci\'on y evidencia sobre el fondo}
+Comparamos \texttt{test\_seen} contra \texttt{test\_unseen}. Para ver si la red aprende el fondo: (i) Grad-CAM sobre la capa SPPF del backbone,
+midiendo qu\'e fracci\'on de la energ\'ia cae dentro de la caja del animal frente a la fracci\'on del \'area que ocupa la caja; (ii) una prueba de
+enmascarado: se tapa el animal con gris y se cuenta cu\'antas veces el modelo sigue emitiendo esa especie.
+\subsection{Robustez}
+CCT-20 no trae etiquetas de oclusi\'on, as\'i que estimamos un proxy: para cada c\'amara se calcula un fondo (mediana de fotos vac\'ias, separando color e
+infrarrojo) y se mide qu\'e fracci\'on de la caja difiere del fondo; se normaliza por el percentil 90 de la especie y se parte en terciles (baja, media,
+alta). El proxy se valida contra \TODO{n} cajas etiquetadas a mano (Spearman $\rho=\TODO{\cdot}$). El tama\~no es el \'area relativa de la caja, tambi\'en en
+terciles. Cada grupo se eval\'ua ignorando las cajas de los dem\'as.
+\subsection{M\'odulo de monitoreo}
+A partir de las detecciones de una c\'amara no vista: umbral por clase (m\'as bajo en prioritarias), consolidaci\'on por secuencia (individuos = m\'aximo de
+cajas de la especie en un mismo cuadro de la secuencia) y agregaci\'on por especie y periodo (n\'umero de detecciones, especies distintas, proporci\'on
+de fotos vac\'ias frente a fotos con fauna).
+
+% ---------------------------------------------------------------------
+\section{Experimentos y resultados}
+% ---------------------------------------------------------------------
+\subsection{Desempe\~no global y por especie}
+\begin{table}[H]\centering
+\caption{Efecto de los aumentos (validaci\'on).}\label{tab:aug}
+\begin{tabular}{lcc}\toprule
+Configuraci\'on & mAP@0.5 & mAP@0.5:0.95\\\midrule
+Baseline (solo giro) & \TODO{} & \TODO{}\\
+Aumentos fuertes & \TODO{} & \TODO{}\\\bottomrule
+\end{tabular}\end{table}
+\begin{table}[H]\centering
+\caption{Resultados en el conjunto de prueba.}\label{tab:summary}
+\begin{tabular}{lcc}\toprule
+Conjunto & mAP@0.5 & mAP@0.5:0.95\\\midrule
+\texttt{test\_seen} & \TODO{} & \TODO{}\\
+\texttt{test\_unseen} & \TODO{} & \TODO{}\\\bottomrule
+\end{tabular}\end{table}
+% tabla por especie: \input{tables/per_class_test_unseen.tex}
+\begin{figure}[H]\centering
+% \includegraphics[width=.7\linewidth]{ap_vs_train_instances_test_unseen.png}
+\caption{AP@0.5 por especie frente al n\'umero de instancias de entrenamiento. \TODO{Spearman}}
+\end{figure}
+\TODO{Comentar especies comunes vs raras: brecha de AP y cu\'anto se explica por el desbalance.}
+
+\subsection{Generalizaci\'on a c\'amaras nuevas}
+\TODO{Tabla de brecha (generalization\_drop.csv), AP por ubicaci\'on nueva, falsos positivos en vac\'ias.}
+\begin{figure}[H]\centering
+% \includegraphics[width=\linewidth]{gradcam_seen_vs_unseen.png}
+\caption{Grad-CAM en ubicaciones vistas (arriba) y nuevas (abajo); recuadro blanco = animal.}
+\end{figure}
+\TODO{Energ\'ia dentro de la caja / \'area de la caja; porcentaje que sigue detectando tras enmascarar. Interpretar con cuidado: es evidencia, no prueba.}
+
+\subsection{Robustez}
+\TODO{Tablas robustness\_size / robustness\_occlusion; ca\'ida entre grupos (robustness\_drop.csv); validaci\'on del proxy.}
+% \includegraphics[width=.9\linewidth]{robustness_groups.png}
+
+\subsection{Demo del m\'odulo de monitoreo}
+\TODO{C\'amara usada, tabla de actividad por especie y semana, tasa de fotos vac\'ias vs con fauna, comparaci\'on con la verdad.}
+% \includegraphics[width=.85\linewidth]{loc_activity.png}
+
+% ---------------------------------------------------------------------
+\section{Discusi\'on cr\'itica y limitaciones}
+% ---------------------------------------------------------------------
+\begin{itemize}
+  \item El proxy de oclusi\'on es indirecto: confunde oclusi\'on con camuflaje y depende de tener buen fondo por c\'amara.
+  \item \texttt{test\_unseen} tiene pocas ubicaciones, as\'i que las estimaciones por c\'amara son ruidosas; no se dan intervalos de confianza salvo \TODO{bootstrap}.
+  \item Grad-CAM sobre el detector es una explicaci\'on aproximada (usamos el m\'aximo del puntaje de clase); mostrar que el mapa se sale de la caja no prueba causalidad.
+  \item Solo una corrida por configuraci\'on (semilla 42); las diferencias peque\~nas entre configuraciones pueden ser ruido.
+  \item Las especies muy raras tienen pocas cajas de prueba y su AP casi no es interpretable.
+  \item Cargamos im\'agenes a 1024\,px y entrenamos a 640\,px; animales muy peque\~nos pierden detalle.
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\section{IA responsable en conservaci\'on}
+% ---------------------------------------------------------------------
+\TODO{Media p\'agina. Completar con el resto del enunciado (el pantallazo estaba cortado). Puntos base: un falso negativo sobre una especie amenazada
+la deja fuera de las decisiones de manejo (conteos subestimados, zonas sin protecci\'on), mientras que un falso positivo cuesta tiempo de revisi\'on;
+por eso los umbrales m\'as bajos para especies prioritarias y revisi\'on humana de lo no detectado; el sesgo hacia especies comunes y c\'amaras
+vistas puede invisibilizar justo lo raro; ubicaciones de especies sensibles son informaci\'on que no debe filtrarse; transparencia sobre
+incertidumbre en los reportes.}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}

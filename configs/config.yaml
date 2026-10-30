@@ -1,0 +1,71 @@
+# =====================================================================
+#  Configuracion central del proyecto (Pregunta 3: camaras trampa + YOLO)
+#  Todo lo que se decide en el entrenamiento queda documentado aqui
+#  (entregable 1) y se copia a la carpeta de cada corrida.
+#  Las rutas son relativas a `root`.
+# =====================================================================
+seed: 42
+
+paths:
+  root: .                      # en Colab: /content/drive/MyDrive/cct_yolo
+  raw: data/raw                # descargas de LILA
+  yolo: data/yolo              # dataset ya convertido a formato YOLO
+  runs: runs                   # pesos y curvas de entrenamiento
+  reports: reports             # tablas, figuras y reportes de salida
+
+data:
+  # --- archivos de LILA (ver scripts/download_data.py) ---
+  images_dir: data/raw/images              # se busca cualquier .jpg por debajo
+  bbox_json: data/raw/caltech_bboxes_20200316.json
+  image_json: data/raw/caltech_camera_traps.json   # opcional: solo para imagenes vacias
+  splits_json: data/raw/CaltechCameraTrapsSplits_v0.json
+  train_split_key: eccv_train
+  val_split_key: eccv_val
+  # --- particiones propias ---
+  # eccv_val  -> test_unseen (ubicaciones NUNCA vistas en entrenamiento)
+  # eccv_train -> se divide POR SECUENCIA en train / val / test_seen
+  holdout_val_frac: 0.10
+  holdout_test_seen_frac: 0.10
+  # --- imagenes vacias (fondo) ---
+  # Se tratan como imagenes de fondo (sin etiquetas), NO como clase.
+  train_empty_ratio: 0.25      # vacias = 0.25 * imagenes con animal (en train)
+  eval_empty_ratio: 1.0        # vacias = 1.0 * imagenes con animal (en val/test)
+  # --- desbalance de clases ---
+  rare_oversample: true        # repeat-factor sampling (Gupta et al., LVIS)
+  rfs_threshold: 0.15          # t de la formula r_c = max(1, sqrt(t / f_c))
+  drop_classes: []             # p. ej. ["car"] si quieres quitar la clase no animal
+  min_box_side: 0.002          # descarta cajas degeneradas (fraccion de la imagen)
+
+train:
+  model: yolov8s.pt            # alternativas: yolov8m.pt, yolov9c.pt (Ultralytics)
+  imgsz: 640
+  epochs: 60
+  batch: 16
+  patience: 15
+  workers: 2
+  device: 0                    # "cpu" si no hay GPU
+  cache: false                 # true acelera si hay RAM suficiente
+  aug_preset: strong           # baseline | strong  (ver src/cct/train.py)
+  name: yolov8s_640_strong
+
+eval:
+  conf_low: 0.001              # para calcular mAP (umbral bajo)
+  iou_nms: 0.6
+  conf_operating: 0.25         # punto de operacion (recall, falsos positivos en vacias)
+  batch: 32
+  rare_quantile: 0.34          # el 34 % de clases con menos instancias = "raras"
+
+gradcam:
+  layer_index: 9               # ultima capa del backbone en yolov8 (SPPF). Ver README.
+  n_images: 24                 # imagenes por grupo (seen / unseen) para la figura y las metricas
+
+robustness:
+  n_bins: 3                    # bajo/medio/alto y pequeno/mediano/grande (terciles)
+  bg_samples_per_location: 25  # vacias usadas para estimar el fondo de cada camara
+  proxy_width: 256             # resolucion de trabajo del estimador de oclusion
+
+monitoring:
+  conf_threshold: 0.30
+  priority_classes: []         # especies de interes (amenazadas). Usan un umbral mas bajo
+  priority_conf_threshold: 0.15
+  period: day                  # day | hour | week
