@@ -20,7 +20,7 @@ os.makedirs('/content/drive/MyDrive/cct_yolo_out', exist_ok=True)""")
 
 md("""## 1. Codigo del repo
 Opcion A (recomendada): clona tu repo de GitHub. Opcion B: sube `cct_yolo.zip` a `MyDrive/` y se descomprime.""")
-code("""REPO_URL = ''   # ej: 'https://github.com/TU_USUARIO/cct-yolo.git'  (deja '' para usar el zip de Drive)
+code("""REPO_URL = 'https://github.com/SalvadorCT/cct-yolo.git'   # deja '' para usar el zip de Drive
 import os, subprocess
 os.chdir('/content')
 if REPO_URL:
@@ -55,11 +55,11 @@ md("Si `stats.json` muestra muy pocas imagenes vacias, descarga extras: `!python
 md("""## 5. Entrenamiento (entregable 1)
 ~60 epocas con YOLOv8s a 640 px. Los pesos y `decisions.json` se guardan en Drive. Si Colab se corta, repite los pasos 0-4 (los datos se vuelven a bajar) y reanuda con `--set train.model=<ruta a last.pt en Drive>` (arranca desde esos pesos con el mismo nombre de corrida).""")
 code("""RUNS = '/content/drive/MyDrive/cct_yolo_out/runs'
-!python -m cct.train --config configs/config.yaml --set paths.runs={RUNS}""")
+!python -m cct.train --config configs/config.yaml --set paths.runs={RUNS} train.epochs=30 train.workers=4 train.batch=32""")
 
 md("""### Experimento de ablacion de aumentos (opcional, para el informe)
 Mismo modelo con aumentos minimos, para justificar la estrategia elegida.""")
-code("""!python -m cct.train --config configs/config.yaml --set paths.runs={RUNS} train.aug_preset=baseline train.name=yolov8s_640_baseline""")
+code("""!python -m cct.train --config configs/config.yaml --set paths.runs={RUNS} train.aug_preset=baseline train.name=yolov8s_640_baseline train.epochs=30 train.workers=4 train.batch=32""")
 
 md("## 6. Evaluacion por especie (entregable 2)")
 code("""W = f'{RUNS}/yolov8s_640_strong/weights/best.pt'

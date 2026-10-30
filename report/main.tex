@@ -1,148 +1,332 @@
 % =====================================================================
 % Informe - Pregunta 3: Monitoreo de fauna silvestre con camaras trampa (YOLO)
-% Compilar en Overleaf (pdfLaTeX + BibTeX). Los \TODO{} se reemplazan con los
-% numeros que salen de reports/tables/*.csv del notebook de Colab.
+% Formato inspirado en el informe de ejemplo (grupo 04, P2).
+% Compilar en Overleaf: pdfLaTeX + BibTeX.
+% Estructura de carpetas esperada en Overleaf:
+%   main.tex, refs.bib, imagenes/*.png, tablas/*.tex
 % =====================================================================
-\documentclass[11pt,a4paper]{article}
+\documentclass[10pt,letterpaper]{article}
+
+% ---------- paquetes ----------
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage[spanish,es-tabla]{babel}
-\usepackage[margin=2.5cm]{geometry}
-\usepackage{graphicx,booktabs,amsmath,hyperref,xcolor,float}
+\usepackage{mathptmx}                       % fuente tipo Times
+\usepackage[margin=1.35in]{geometry}
+\usepackage{graphicx,amsmath,amssymb,xcolor,float,titlesec,enumitem,caption}
+\usepackage[authoryear,round]{natbib}
+\usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=cyan]{hyperref}
+\graphicspath{{imagenes/}}
 
-% marcador visible para lo que falta llenar
-\newcommand{\TODO}[1]{\textcolor{red}{[#1]}}
-\graphicspath{{figures/}}
+% ---------- estilo ----------
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.7em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection.}{0.7em}{}
+\titlespacing*{\section}{0pt}{1.4ex plus .5ex}{1ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus .4ex}{0.8ex}
+\setlist[itemize]{label=\scriptsize$\blacksquare$,leftmargin=2em,itemsep=2pt,topsep=3pt}
+\captionsetup{font=small,labelfont=normal}
+\setlength{\parskip}{3pt}
+\renewcommand{\arraystretch}{1.1}
 
-\title{Monitoreo de fauna silvestre con c\'amaras trampa:\\ detecci\'on con YOLO en Caltech Camera Traps}
-\author{Salvador L.\ C.\ T. \\ Maestr\'ia en Inteligencia Artificial, UNI}
-\date{\today}
+% ---------- encabezado ----------
+\title{\vspace{-1.2em}\rule{\linewidth}{4pt}\\[1.2ex]
+\bfseries Monitoreo de Fauna Silvestre con Cámaras Trampa mediante YOLOv8:\\ Generalización a Cámaras Nuevas y Robustez\\[0.6ex]
+\rule{\linewidth}{0.5pt}}
+\author{%
+\textbf{Salvador Cabrera Taco, Anllelo Carreazo Yrizales, Yda Ramirez Rojas,}\\
+\textbf{Pedro Alexander Marquez Lamadrid, Mijael Aguirre Zegarra}\\[0.3ex]
+Universidad Nacional de Ingeniería (UNI) \\ Lima, Perú \\[0.3ex]
+{\small\texttt{\{salvador.cabrera.t, anllelo.carreazo.y, y.ramirez.r,}}\\
+{\small\texttt{pedro.marquez.l, mijael.aguirre.z\}@uni.pe}}}
+\date{}
 
 \begin{document}
 \maketitle
-
-\begin{abstract}
-Se entrena un detector YOLOv8 sobre Caltech Camera Traps (CCT-20) y se estudia qu\'e tan bien generaliza a c\'amaras que nunca vio,
-c\'omo se ve afectado por el desbalance de especies, la oclusi\'on y el tama\~no del animal, y c\'omo puede usarse para generar reportes de
-actividad por especie. En ubicaciones nuevas el mAP@0.5 pasa de \TODO{X} a \TODO{Y}, y el an\'alisis con Grad-CAM \TODO{indica / no indica}
-que parte de la se\~nal viene del fondo.
-\end{abstract}
+\vspace{-1.5em}
 
 % ---------------------------------------------------------------------
-\section{Motivaci\'on}
+% RESUMEN
 % ---------------------------------------------------------------------
-Las c\'amaras trampa generan millones de fotos y la mayor\'ia no tiene animales. Revisarlas a mano es el cuello de botella del monitoreo de
-fauna \cite{norouzzadeh2018,tabak2019mlwic}. Un detector permite descartar fotos vac\'ias, contar individuos y alertar sobre especies
-prioritarias, pero solo sirve si funciona en c\'amaras nuevas, que es justo donde falla \cite{beery2018terra}. Este trabajo prueba eso de forma
-expl\'icita con la partici\'on oficial de ubicaciones, y a\~nade un m\'odulo que convierte detecciones en tablas de actividad ecol\'ogica.
+\begin{center}\textbf{Abstract}\end{center}
+\vspace{-0.8em}
+\begin{quote}\small
+Las cámaras trampa generan más fotos de las que se pueden revisar a mano, y un detector solo sirve si funciona en cámaras que nunca vio.
+En este trabajo ajustamos un YOLOv8s sobre Caltech Camera Traps (CCT-20) y lo evaluamos en cámaras vistas y en cámaras completamente nuevas
+(partición oficial \texttt{eccv\_train}/\texttt{eccv\_val}). El mAP@0.5 cae de 0.841 a 0.462 al pasar a ubicaciones nuevas ($-$45\,\%), y las especies
+raras sufren más: su AP@0.5 baja a 0.149 frente a 0.637 de las comunes. El tamaño del animal y, sobre todo, que esté cortado por el borde de la foto
+degradan el desempeño; un proxy de oclusión por sustracción de fondo no mostró caída. Grad-CAM da evidencia mixta sobre el uso del fondo.
+Con las detecciones construimos un reporte de actividad por especie y semana para una cámara no vista, que recupera 10 de las 11 especies presentes.
+\end{quote}
+
+% ---------------------------------------------------------------------
+\section{Motivación}
+% ---------------------------------------------------------------------
+Una cámara trampa dispara cada vez que detecta movimiento, y la mayoría de las fotos termina siendo viento, sombras o animales que pasaron de largo.
+Revisarlas a mano es lo que frena el monitoreo de fauna a gran escala \citep{norouzzadeh2018}. Un detector de objetos puede descartar lo vacío, contar
+individuos y avisar cuando aparece una especie prioritaria.
+
+El problema es que en la práctica el modelo se va a usar en cámaras nuevas. \citet{beery2018terra} mostraron que los clasificadores entrenados con unas cámaras
+pierden mucho desempeño en otras (\emph{terra incognita}), porque el fondo cambia y la red puede estar aprendiendo la escena en lugar del animal. Por eso este
+trabajo no se queda en un mAP global: medimos la brecha entre cámaras vistas y nuevas, miramos qué pasa con las especies poco frecuentes, probamos si el tamaño y
+la oclusión del animal importan, y construimos un módulo que convierte las detecciones en una tabla de actividad ecológica.
 
 % ---------------------------------------------------------------------
 \section{Trabajos relacionados}
 % ---------------------------------------------------------------------
-\paragraph{Clasificaci\'on y detecci\'on en c\'amaras trampa.}
-Norouzzadeh et al.\ \cite{norouzzadeh2018} identifican, cuentan y describen animales con redes profundas en Snapshot Serengeti, y Tabak et al.\
-\cite{tabak2019mlwic} muestran la utilidad ecol\'ogica de estos clasificadores. Beery et al.\ \cite{beery2018terra} introducen Caltech Camera Traps y
-documentan la ca\'ida de desempe\~no en c\'amaras no vistas (\emph{terra incognita}); su pipeline posterior \cite{beery2019pipeline} usa un detector
-general para filtrar vac\'ias antes de clasificar.
-\paragraph{Detectores de una etapa.}
-YOLO \cite{redmon2016yolo} predice cajas y clases en una sola pasada; las versiones recientes (YOLOv8 \cite{jocher2023ultralytics},
-YOLOv9 \cite{wang2024yolov9}) mejoran el cuello de agregaci\'on y la asignaci\'on de etiquetas. Evaluamos con las m\'etricas de COCO \cite{lin2014coco}.
-\paragraph{Desbalance y explicabilidad.}
-Para clases raras usamos \emph{repeat factor sampling} \cite{gupta2019lvis}. Para inspeccionar en qu\'e se fija la red usamos Grad-CAM
-\cite{selvaraju2017gradcam}.
+\citet{norouzzadeh2018} entrenan redes profundas sobre Snapshot Serengeti para identificar, contar y describir animales, y \citet{beery2019pipeline} proponen
+un flujo de revisión donde un detector general filtra las fotos vacías antes de clasificar. El conjunto que usamos, Caltech Camera Traps, viene de
+\citet{beery2018terra}, quienes lo publicaron justamente para medir la generalización a cámaras no vistas y reportaron una caída fuerte de desempeño.
+
+Como detector usamos YOLO \citep{redmon2016yolo}, que predice cajas y clases en una sola pasada por la red. Trabajamos con la implementación de Ultralytics para
+YOLOv8 \citep{jocher2023ultralytics}, y YOLOv9 \citep{wang2024yolov9} sería la alternativa natural. Las métricas son las de COCO \citep{lin2014coco}.
+
+El desbalance entre especies es típico de estas colecciones: unas pocas dominan y muchas tienen apenas decenas de fotos. Para las clases raras usamos
+\emph{repeat factor sampling} \citep{gupta2019lvis}, que repite más veces las imágenes que contienen clases poco frecuentes. Para ver en qué se fija la red usamos
+Grad-CAM \citep{selvaraju2017gradcam}, que pondera los mapas de activación de una capa con el gradiente de un puntaje de salida.
 
 % ---------------------------------------------------------------------
-\section{Metodolog\'ia}
+\section{Metodología}
 % ---------------------------------------------------------------------
 \subsection{Datos y particiones}
-Usamos CCT-20 (\TODO{n} im\'agenes con cajas, \TODO{k} especies, im\'agenes reducidas a 1024\,px). La partici\'on oficial define \texttt{eccv\_train}
-(ubicaciones de entrenamiento) y \texttt{eccv\_val} (ubicaciones nuevas). De \texttt{eccv\_train} apartamos validaci\'on y un
-\texttt{test\_seen} del 10\,\% cada uno, \emph{por secuencia}, porque los cuadros de una misma r\'afaga son casi id\'enticos y separarlos por
-imagen filtrar\'ia informaci\'on. \texttt{eccv\_val} es nuestro \texttt{test\_unseen}.
-\subsection{Detector y decisiones de entrenamiento}
-Ajustamos \TODO{YOLOv8s} preentrenado en COCO, \TODO{60} \'epocas, resoluci\'on 640\,px (las fotos son 4:3 a 1024\,px; por debajo de eso los animales
-peque\~nos se pierden), coseno de tasa de aprendizaje y parada temprana. \emph{Aumentos:} color (HSV), traslaci\'on y escala moderadas, giro horizontal,
-mosaico y borrado aleatorio; comparamos contra un \emph{baseline} con solo giro horizontal (Tabla~\ref{tab:aug}). \emph{Im\'agenes vac\'ias:} se
-conservan como fondo (etiqueta vac\'ia), submuestreadas a \TODO{25\,\%} en entrenamiento para que no dominen, y completas en evaluaci\'on para medir
-falsos positivos. \emph{Desbalance:} \emph{repeat factor sampling} con umbral \TODO{0.15}.
-\subsection{Evaluaci\'on}
-mAP@0.5 y mAP@0.5:0.95 por especie y promedio, con umbral de confianza muy bajo (0.001) como es costumbre, y recall a confianza operativa 0.25.
-\subsection{Generalizaci\'on y evidencia sobre el fondo}
-Comparamos \texttt{test\_seen} contra \texttt{test\_unseen}. Para ver si la red aprende el fondo: (i) Grad-CAM sobre la capa SPPF del backbone,
-midiendo qu\'e fracci\'on de la energ\'ia cae dentro de la caja del animal frente a la fracci\'on del \'area que ocupa la caja; (ii) una prueba de
-enmascarado: se tapa el animal con gris y se cuenta cu\'antas veces el modelo sigue emitiendo esa especie.
+Usamos el subconjunto CCT-20 de LILA BC (imágenes reducidas a 1024\,px), que trae cajas para 15 categorías (opossum, raccoon, squirrel, bobcat, skunk, dog, coyote,
+rabbit, bird, cat, badger, car, deer, fox, rodent). La partición oficial separa las ubicaciones de entrenamiento (\texttt{eccv\_train}) de ubicaciones completamente
+nuevas (\texttt{eccv\_val}). A partir de ahí armamos cuatro conjuntos:
+
+\begin{itemize}
+  \item \texttt{train}, \texttt{val} y \texttt{test\_seen}: salen de las ubicaciones de \texttt{eccv\_train}, repartidas aproximadamente 80/10/10\,\%. La repartición se hace
+  por \emph{secuencia} (hash de \texttt{seq\_id}) y no por imagen, porque los cuadros de una misma ráfaga son casi idénticos y mezclarlos entre entrenamiento y prueba
+  inflaría las métricas.
+  \item \texttt{test\_unseen}: todas las imágenes de \texttt{eccv\_val}, es decir, 10 cámaras que el modelo nunca vio.
+\end{itemize}
+
+La Tabla~\ref{tab:resumen} muestra el tamaño de los dos conjuntos de prueba. La validación tiene 2,812 imágenes (52 vacías).
+
+\subsection{Modelo y decisiones de entrenamiento}
+Ajustamos YOLOv8s preentrenado en COCO. La Tabla~\ref{tab:decisiones} resume las decisiones; el detalle completo queda en \texttt{results/decisions.json} del repositorio.
+
+\begin{table}[H]
+\centering\small
+\caption{Decisiones de entrenamiento.}\label{tab:decisiones}
+\begin{tabular}{|l|p{8.2cm}|}
+\hline
+Decisión & Valor y razón \\ \hline
+Modelo & YOLOv8s, pesos COCO; tamaño medio, entrena rápido en una sola GPU \\
+Resolución & 640\,px; las fotos son 4:3 a 1024\,px y por debajo se pierden los animales pequeños \\
+Aumentos & HSV (0.015/0.5/0.4), rotación $5^\circ$, traslación 0.1, escala 0.5, cizalla 2, giro horizontal 0.5, mosaico, mixup 0.1, borrado 0.4 \\
+Imágenes vacías & Se conservan como fondo (etiqueta vacía), con tope del 25\,\% de las imágenes con animales; la cantidad disponible fue mucho menor que el tope \\
+Desbalance & \emph{Repeat factor sampling}, umbral $t=0.15$ \\
+Optimización & 30 épocas, lote 32, tasa de aprendizaje coseno, optimizador automático de Ultralytics, semilla 42 \\
+Hardware & 1 GPU A100 (80\,GB); 1.14 horas \\ \hline
+\end{tabular}
+\end{table}
+
+Los aumentos de color pretenden cubrir los cambios de iluminación entre cámaras y entre día e infrarrojo; el mosaico y la escala ayudan con animales pequeños;
+las imágenes vacías enseñan al modelo qué es solo fondo. Para el desbalance, el factor de repetición de una clase $c$ es
+\begin{equation}
+r_c = \max\!\left(1,\sqrt{t/f_c}\right),
+\end{equation}
+donde $f_c$ es la fracción de imágenes de entrenamiento que contienen la clase; cada imagen se repite según el mayor $r_c$ de sus clases.
+No corrimos un experimento de ablación contra un entrenamiento con aumentos mínimos por falta de tiempo; por eso la elección de aumentos queda como decisión de
+diseño y no como resultado comparado.
+
+\subsection{Evaluación}
+Calculamos mAP@0.5 y mAP@0.5:0.95 con \texttt{pycocotools}, tomando las predicciones con confianza mínima 0.001 e IoU de NMS 0.6, y obtenemos AP por clase a partir de la
+matriz de precisión. Además reportamos el recall a confianza operativa 0.25 (una caja real cuenta como detectada si hay una predicción de su clase con IoU $\ge 0.5$) y la
+fracción de imágenes vacías con al menos una detección. Separamos las especies en comunes y raras: raras son el tercio con menos instancias de entrenamiento.
+
+\subsection{Generalización y evidencia sobre el fondo}
+Comparamos las métricas en \texttt{test\_seen} y \texttt{test\_unseen}. Para ver si el modelo usa el fondo aplicamos Grad-CAM sobre la capa 9 del backbone (el bloque SPPF).
+Con $A^k$ las activaciones de la capa y $S$ el puntaje máximo de la clase del animal más grande de la imagen,
+\begin{equation}
+\alpha_k=\frac{1}{HW}\sum_{i,j}\frac{\partial S}{\partial A^k_{ij}},\qquad
+L=\mathrm{ReLU}\Big(\sum_k \alpha_k A^k\Big).
+\end{equation}
+Medimos el cociente $\rho$ entre la fracción de energía de $L$ que cae dentro de la caja del animal y la fracción del área de la imagen que ocupa la caja;
+$\rho=1$ significa que el mapa no distingue la caja del resto, y $\rho>1$ que se concentra en ella. Como segunda prueba, tapamos con gris todas las cajas del animal y
+contamos cuántas veces el modelo sigue emitiendo esa especie. Usamos 24 imágenes por conjunto.
+
 \subsection{Robustez}
-CCT-20 no trae etiquetas de oclusi\'on, as\'i que estimamos un proxy: para cada c\'amara se calcula un fondo (mediana de fotos vac\'ias, separando color e
-infrarrojo) y se mide qu\'e fracci\'on de la caja difiere del fondo; se normaliza por el percentil 90 de la especie y se parte en terciles (baja, media,
-alta). El proxy se valida contra \TODO{n} cajas etiquetadas a mano (Spearman $\rho=\TODO{\cdot}$). El tama\~no es el \'area relativa de la caja, tambi\'en en
-terciles. Cada grupo se eval\'ua ignorando las cajas de los dem\'as.
-\subsection{M\'odulo de monitoreo}
-A partir de las detecciones de una c\'amara no vista: umbral por clase (m\'as bajo en prioritarias), consolidaci\'on por secuencia (individuos = m\'aximo de
-cajas de la especie en un mismo cuadro de la secuencia) y agregaci\'on por especie y periodo (n\'umero de detecciones, especies distintas, proporci\'on
-de fotos vac\'ias frente a fotos con fauna).
+CCT-20 no trae etiquetas de oclusión, así que construimos un proxy. Para cada cámara estimamos un fondo como la mediana de fotos de esa cámara (separando color e infrarrojo) y
+medimos qué fracción de píxeles dentro de la caja difiere de ese fondo, la cobertura $\mathrm{cov}$. Normalizamos por el percentil 90 de su especie:
+\begin{equation}
+v=\min\!\Big(1,\frac{\mathrm{cov}}{\mathrm{ref}_c}\Big),\qquad o=1-v,
+\end{equation}
+y partimos $o$ en terciles (baja, media, alta). Es una aproximación: un animal camuflado también produce poca cobertura. No la validamos con etiquetas manuales.
+Marcamos como truncadas las cajas que tocan el borde de la imagen. El tamaño es el área relativa de la caja, también en terciles (cortes 0.018 y 0.037). Cada grupo se evalúa
+ignorando las cajas de los demás grupos, de modo que las detecciones de otros animales no cuenten como falsos positivos.
+
+\subsection{Módulo de monitoreo ecológico}
+A partir de las detecciones de una cámara aplicamos reglas simples: un umbral de confianza de 0.30 (más bajo, 0.15, para especies prioritarias, para no perder
+falsos negativos costosos) y una consolidación por secuencia, donde los individuos de una especie son el máximo de cajas de esa especie en un mismo cuadro de la secuencia,
+para no contar varias veces al mismo animal. Después agregamos por especie y periodo (día, semana o mes): detecciones, individuos, secuencias, especies distintas y la
+proporción de fotos vacías frente a fotos con fauna.
 
 % ---------------------------------------------------------------------
 \section{Experimentos y resultados}
 % ---------------------------------------------------------------------
-\subsection{Desempe\~no global y por especie}
-\begin{table}[H]\centering
-\caption{Efecto de los aumentos (validaci\'on).}\label{tab:aug}
-\begin{tabular}{lcc}\toprule
-Configuraci\'on & mAP@0.5 & mAP@0.5:0.95\\\midrule
-Baseline (solo giro) & \TODO{} & \TODO{}\\
-Aumentos fuertes & \TODO{} & \TODO{}\\\bottomrule
-\end{tabular}\end{table}
-\begin{table}[H]\centering
-\caption{Resultados en el conjunto de prueba.}\label{tab:summary}
-\begin{tabular}{lcc}\toprule
-Conjunto & mAP@0.5 & mAP@0.5:0.95\\\midrule
-\texttt{test\_seen} & \TODO{} & \TODO{}\\
-\texttt{test\_unseen} & \TODO{} & \TODO{}\\\bottomrule
-\end{tabular}\end{table}
-% tabla por especie: \input{tables/per_class_test_unseen.tex}
-\begin{figure}[H]\centering
-% \includegraphics[width=.7\linewidth]{ap_vs_train_instances_test_unseen.png}
-\caption{AP@0.5 por especie frente al n\'umero de instancias de entrenamiento. \TODO{Spearman}}
+\subsection{Desempeño global y por especie}
+\begin{table}[H]
+\centering\small
+\caption{Resultados en los conjuntos de prueba. ``Recall'' es a confianza 0.25; ``Vacías con FP'' es la fracción de imágenes vacías con al menos una detección.}\label{tab:resumen}
+\input{tablas/tab_resumen.tex}
+\end{table}
+
+En ubicaciones vistas el modelo llega a 0.841 de mAP@0.5 (en validación, con el evaluador de Ultralytics, obtuvo 0.937; es más alto porque esa partición sirve para elegir el mejor punto de parada y el protocolo difiere).
+En ubicaciones nuevas baja a 0.462. En la Tabla~\ref{tab:porclase}, especies muy frecuentes como \emph{opossum}, \emph{raccoon} y \emph{car} se mantienen bien (AP@0.5 de 0.875, 0.717 y 0.955 en
+cámaras nuevas), mientras que \emph{bird} (0.091), \emph{rodent} (0.007) y \emph{squirrel} (0.252) se hunden. \emph{Deer} no tiene cajas en las cámaras nuevas, así que no se evalúa allí.
+
+\begin{table}[H]
+\centering\small
+\caption{AP por especie, ordenadas por instancias de entrenamiento. Entre guiones, clases sin cajas en ese conjunto.}\label{tab:porclase}
+\input{tablas/tab_porclase.tex}
+\end{table}
+
+\begin{table}[H]
+\centering\small
+\caption{Efecto del desbalance: AP de las especies comunes frente a las raras (tercio con menos instancias de entrenamiento).}\label{tab:comunrara}
+\input{tablas/tab_comun_rara.tex}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.62\linewidth]{ap_vs_train_instances_test_unseen.png}
+\caption{AP@0.5 por especie frente a las instancias de entrenamiento (escala logarítmica), cámaras nuevas.}\label{fig:apn}
 \end{figure}
-\TODO{Comentar especies comunes vs raras: brecha de AP y cu\'anto se explica por el desbalance.}
 
-\subsection{Generalizaci\'on a c\'amaras nuevas}
-\TODO{Tabla de brecha (generalization\_drop.csv), AP por ubicaci\'on nueva, falsos positivos en vac\'ias.}
-\begin{figure}[H]\centering
-% \includegraphics[width=\linewidth]{gradcam_seen_vs_unseen.png}
-\caption{Grad-CAM en ubicaciones vistas (arriba) y nuevas (abajo); recuadro blanco = animal.}
+El efecto del desbalance se ve en la Tabla~\ref{tab:comunrara}: en cámaras vistas las raras pierden 0.22 de AP@0.5 frente a las comunes, y en cámaras nuevas esa distancia se
+va a 0.49 (0.637 contra 0.149). La correlación de Spearman entre el logaritmo de las instancias de entrenamiento y el AP@0.5 es 0.39 en cámaras vistas y 0.70 en nuevas
+(Figura~\ref{fig:apn}): cuando además se cambia de cámara, tener pocos ejemplos pesa mucho más. Con pocas cajas de prueba (por ejemplo \emph{badger} con 15 y \emph{fox} con 1 en cámaras nuevas)
+estos APs son muy ruidosos.
+
+\subsection{Generalización a cámaras nuevas}
+El mAP@0.5 cae 45.0\,\% y el mAP@0.5:0.95 cae 47.0\,\% (Tabla~\ref{tab:resumen}, Figura~\ref{fig:gap}); el recall a confianza 0.25 cae de 0.936 a 0.739 ($-$21.1\,\%). Entre las
+10 cámaras nuevas el mAP@0.5 va desde 0.324 (cámara 40) hasta 0.833 (cámara 7), así que la brecha no es uniforme: depende mucho de qué cámara toque.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.52\linewidth]{generalization_gap.png}
+\caption{Desempeño en ubicaciones vistas y nuevas.}\label{fig:gap}
 \end{figure}
-\TODO{Energ\'ia dentro de la caja / \'area de la caja; porcentaje que sigue detectando tras enmascarar. Interpretar con cuidado: es evidencia, no prueba.}
 
-\subsection{Robustez}
-\TODO{Tablas robustness\_size / robustness\_occlusion; ca\'ida entre grupos (robustness\_drop.csv); validaci\'on del proxy.}
-% \includegraphics[width=.9\linewidth]{robustness_groups.png}
+Un hallazgo incómodo está en las imágenes vacías: con confianza 0.25, el 96.5\,\% (vistas) y el 94.0\,\% (nuevas) de las fotos vacías recibió al menos una detección, con 1.1 y 1.2 detecciones por
+foto en promedio. No investigamos la causa. Nuestra hipótesis es que hubo pocas imágenes vacías en el entrenamiento (en la validación son 52 de 2,812, el 1.8\,\%) y que algunas de las
+marcadas como vacías en el dataset contienen animales difíciles de ver, pero no lo verificamos.
 
-\subsection{Demo del m\'odulo de monitoreo}
-\TODO{C\'amara usada, tabla de actividad por especie y semana, tasa de fotos vac\'ias vs con fauna, comparaci\'on con la verdad.}
-% \includegraphics[width=.85\linewidth]{loc_activity.png}
+\paragraph{¿El modelo aprende el fondo?}
+La Figura~\ref{fig:gradcam} muestra mapas Grad-CAM, y la Tabla~\ref{tab:gradcam} resume las dos pruebas. En cámaras vistas $\rho\approx1.02$: el mapa no distingue la caja del resto de la imagen. En cámaras
+nuevas $\rho\approx0.59$, o sea que el mapa pone menos energía dentro del animal de la que pondría uno uniforme. Varios mapas se encienden en el borde superior de la foto, donde la cámara imprime fecha y temperatura,
+y en la vegetación. Esto es compatible con que la red use contexto de la escena y de la franja de metadatos.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{gradcam_seen_vs_unseen.png}
+\caption{Grad-CAM sobre la capa SPPF. Arriba: ubicaciones vistas; abajo: ubicaciones nuevas. El recuadro blanco es el animal y el número es la fracción de energía dentro de la caja.}\label{fig:gradcam}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\caption{Grad-CAM: energía dentro de la caja, área de la caja, cociente $\rho$ y prueba de enmascarado (24 imágenes por conjunto).}\label{tab:gradcam}
+\input{tablas/tab_gradcam.tex}
+\end{table}
+
+La prueba de enmascarado dice algo distinto: al tapar al animal el modelo casi nunca sigue emitiendo esa especie (4.2\,\% en vistas y 0\,\% en nuevas). Entonces, cuando el animal desaparece,
+no se inventa la detección a partir del fondo. Nuestra lectura es que la evidencia es mixta: el modelo sí necesita al animal para detectarlo, pero los mapas de la capa 9 reparten atención hacia el contexto, y de ahí
+no podemos concluir que el fondo explique la caída entre cámaras. Con 24 imágenes por conjunto, un solo estimador y una capa, esto es un indicio y no una prueba.
+
+\subsection{Robustez por tamaño y oclusión}
+\begin{table}[H]
+\centering\small
+\caption{Desempeño por grupo. Izquierda: ubicaciones vistas; derecha: ubicaciones nuevas. Rec. es recall a confianza 0.25.}\label{tab:robustez}
+\input{tablas/tab_robustez.tex}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{robustness_groups.png}
+\caption{mAP@0.5 por grupo de tamaño y de oclusión estimada.}\label{fig:rob}
+\end{figure}
+
+\paragraph{Tamaño.} En cámaras nuevas el mAP@0.5:0.95 pasa de 0.234 (cajas grandes) a 0.153 (pequeñas), una caída del 34.8\,\%; en cámaras vistas es de 0.587 a 0.366 ($-$37.7\,\%). Con mAP@0.5 el efecto es menor
+($-$9.2\,\% en nuevas, $-$11.4\,\% en vistas) y no es monótono: las medianas rinden mejor que las grandes. Lo que cuesta a los animales pequeños es la precisión de la caja, no tanto encontrarlos.
+
+\paragraph{Oclusión (proxy).} No hay caída; si algo, el grupo de oclusión alta tiene mAP@0.5 ligeramente mayor (0.394 contra 0.365 en nuevas). Como el proxy no está validado, lo más honesto es decir que
+no mide la dificultad de detección, probablemente porque confunde oclusión con otras cosas (animal grande y cercano que ocupa toda la caja, cambios de luz). No podemos afirmar que la oclusión no importe.
+
+\paragraph{Truncamiento.} Es el factor más fuerte que encontramos. En cámaras nuevas, las cajas que tocan el borde de la imagen tienen mAP@0.5 de 0.204 frente a 0.488 de las completas ($-$58.2\,\%) y recall de 0.539 contra 0.804.
+En cámaras vistas esa diferencia no aparece (0.837 contra 0.818). Es posible que el truncamiento se mezcle con el tamaño: en cámaras nuevas las cajas grandes tienen un recall bajo (0.685), y los animales
+grandes y cercanos a la cámara son los que más se cortan; esto es una hipótesis que no probamos.
+
+\subsection{Demostración del módulo de monitoreo}
+Aplicamos el módulo a la cámara 100, la cámara no vista con más fotos (4,265 fotos entre mayo de 2010 y junio de 2011, 54 semanas). La Figura~\ref{fig:act} muestra los individuos por especie y semana,
+y la Tabla~\ref{tab:monitoreo} compara los totales con las cajas reales. El reporte completo por semana está en \texttt{results/monitoring/}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{actividad_camara100.png}
+\caption{Individuos detectados por especie y semana en la cámara 100 (no vista en el entrenamiento).}\label{fig:act}
+\end{figure}
+
+\begin{table}[H]
+\centering\small
+\caption{Cámara 100: cajas reales y salida del módulo (umbral 0.30). Individuos son máximos por secuencia.}\label{tab:monitoreo}
+\input{tablas/tab_monitoreo.tex}
+\end{table}
+
+El módulo detecta 10 de las 11 especies presentes (se pierde \emph{badger}, con 4 cajas reales). Los totales de \emph{raccoon}, \emph{cat} y \emph{opossum} coinciden con los reales, pero \emph{bobcat} se sobreestima
+(135 contra 49) y \emph{squirrel} se subestima (146 contra 233). Según el módulo, el 94.6\,\% de las fotos tiene fauna (4,033 fotos) y el 5.4\,\% está vacío (232); según la verdad son 4,141 fotos con fauna (97.1\,\%) y 124 vacías.
+O sea que con este umbral el módulo subestima la fauna en unos 2.5 puntos, y como el modelo marca casi todo lo vacío como detección (sección anterior), la tasa de vacías de este reporte no es confiable. Las alzas semanales de
+\emph{dog} (semanas 2010-W32, W35, W43 y W44) son visibles en la figura.
 
 % ---------------------------------------------------------------------
-\section{Discusi\'on cr\'itica y limitaciones}
+\section{IA responsable en conservación}
 % ---------------------------------------------------------------------
+El costo de equivocarse no es simétrico. Un falso positivo hace perder tiempo de revisión; un falso negativo sobre una especie amenazada la deja fuera de los conteos, y si los conteos guían decisiones
+de manejo (dónde proteger, dónde no), esa especie queda sin respaldo en los datos. En nuestros resultados el riesgo es concreto: las especies raras son justo las que peor funcionan en cámaras nuevas
+(AP@0.5 de 0.149 frente a 0.637 de las comunes), y en la cámara de demostración se perdió por completo \emph{badger}. Un modelo con buen promedio puede ser el peor para lo que más importa.
+
+Por eso proponemos usar umbrales más bajos para las especies prioritarias, como hace el módulo, aceptando más falsos positivos, y revisión humana de las fotos donde nada fue detectado en cámaras de zonas sensibles. No hay que confiar en
+el desempeño de cámaras vistas para cámaras nuevas: hay que medir en una muestra etiquetada de cada cámara antes de usar sus reportes. Los reportes deben informar la incertidumbre (por ejemplo, que la tasa de fotos vacías es poco fiable)
+en lugar de entregar solo cifras limpias. Por último, la ubicación de especies amenazadas es información sensible que podría usarse para cazarlas; los reportes y los repositorios no deberían publicar coordenadas ni tablas que permitan localizarlas.
+
+% ---------------------------------------------------------------------
+\section{Conclusiones}
+% ---------------------------------------------------------------------
+\subsection{Principales hallazgos}
 \begin{itemize}
-  \item El proxy de oclusi\'on es indirecto: confunde oclusi\'on con camuflaje y depende de tener buen fondo por c\'amara.
-  \item \texttt{test\_unseen} tiene pocas ubicaciones, as\'i que las estimaciones por c\'amara son ruidosas; no se dan intervalos de confianza salvo \TODO{bootstrap}.
-  \item Grad-CAM sobre el detector es una explicaci\'on aproximada (usamos el m\'aximo del puntaje de clase); mostrar que el mapa se sale de la caja no prueba causalidad.
-  \item Solo una corrida por configuraci\'on (semilla 42); las diferencias peque\~nas entre configuraciones pueden ser ruido.
-  \item Las especies muy raras tienen pocas cajas de prueba y su AP casi no es interpretable.
-  \item Cargamos im\'agenes a 1024\,px y entrenamos a 640\,px; animales muy peque\~nos pierden detalle.
+  \item El modelo se desempeña bien en cámaras que ya vio (mAP@0.5 0.841) y pierde casi la mitad en cámaras nuevas (0.462). El número que importa para usarlo en campo es el segundo.
+  \item El desbalance pega mucho más fuerte al cambiar de cámara: la brecha entre especies comunes y raras pasa de 0.22 a 0.49 de AP@0.5.
+  \item Los animales pequeños y los cortados por el borde de la foto son los casos difíciles; el truncamiento fue el factor con mayor caída ($-$58\,\% de mAP@0.5 en cámaras nuevas).
+  \item Con Grad-CAM y la prueba de enmascarado no pudimos afirmar ni descartar que el fondo explique la brecha; la evidencia es mixta.
+  \item El módulo de monitoreo recupera la mayor parte de las especies y los totales de las comunes, pero su tasa de fotos vacías no es confiable.
+\end{itemize}
+
+\subsection{Trabajos futuros}
+\begin{itemize}
+  \item Conseguir muchas más imágenes vacías para entrenar y revisar por qué casi todas reciben una detección.
+  \item Validar el proxy de oclusión con etiquetas manuales, o sustituirlo por una medida directa.
+  \item Hacer la ablación de aumentos, repetir con varias semillas y reportar intervalos de confianza.
+  \item Probar ajuste fino con unas pocas fotos etiquetadas de la cámara nueva, y Grad-CAM en varias capas.
+\end{itemize}
+
+\subsection{Limitaciones del estudio}
+\begin{itemize}
+  \item Una sola corrida por configuración (semilla 42) y sin intervalos de confianza; las diferencias pequeñas pueden ser ruido.
+  \item Solo 10 cámaras nuevas, y varias especies con muy pocas cajas de prueba (\emph{fox}, \emph{badger}, \emph{rodent}); \emph{deer} no aparece en las cámaras nuevas.
+  \item El proxy de oclusión no está validado y sus resultados no se pueden interpretar como efecto de la oclusión.
+  \item El análisis de Grad-CAM usa 24 imágenes por conjunto, una capa y el puntaje máximo de clase.
+  \item Usamos YOLOv8 de Ultralytics como arquitectura; lo implementado por nosotros es el pipeline de datos, la evaluación, Grad-CAM, el proxy de oclusión y el módulo de monitoreo.
+  \item No se corrió la ablación de aumentos y el entrenamiento duró 30 épocas.
 \end{itemize}
 
 % ---------------------------------------------------------------------
-\section{IA responsable en conservaci\'on}
+\section{Material complementario}
 % ---------------------------------------------------------------------
-\TODO{Media p\'agina. Completar con el resto del enunciado (el pantallazo estaba cortado). Puntos base: un falso negativo sobre una especie amenazada
-la deja fuera de las decisiones de manejo (conteos subestimados, zonas sin protecci\'on), mientras que un falso positivo cuesta tiempo de revisi\'on;
-por eso los umbrales m\'as bajos para especies prioritarias y revisi\'on humana de lo no detectado; el sesgo hacia especies comunes y c\'amaras
-vistas puede invisibilizar justo lo raro; ubicaciones de especies sensibles son informaci\'on que no debe filtrarse; transparencia sobre
-incertidumbre en los reportes.}
+El código reproducible, el cuaderno de Colab, las tablas y las figuras están en el repositorio de GitHub: \url{https://github.com/SalvadorCT/cct-yolo}.
 
-\bibliographystyle{plain}
+% ---------------------------------------------------------------------
+% REFERENCIAS
+% ---------------------------------------------------------------------
+\bibliographystyle{plainnat}
 \bibliography{refs}
+
 \end{document}

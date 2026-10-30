@@ -1,55 +1,113 @@
-# Monitoreo de fauna con camaras trampa (YOLO) - Caltech Camera Traps (CCT-20)
+# Monitoreo de fauna silvestre con cámaras trampa (YOLOv8) — Caltech Camera Traps
 
-Pregunta 3 del parcial 2026-II (Redes Neuronales y Aprendizaje Profundo, UNI).
-Pipeline reproducible: descarga de LILA BC -> dataset YOLO sin fuga entre secuencias -> fine-tuning de YOLOv8 ->
-evaluacion por especie -> generalizacion a camaras nuevas (+ Grad-CAM) -> robustez (oclusion / tamano) -> reporte de actividad.
+Proyecto de la **Pregunta 3** del examen parcial 2026-II del curso *Redes Neuronales y Aprendizaje Profundo* (Maestría en Inteligencia Artificial, UNI).
+Grupo 4: Salvador Cabrera Taco, Anllelo Carreazo Yrizales, Yda Ramirez Rojas, Pedro Alexander Marquez Lamadrid, Mijael Aguirre Zegarra.
 
-## Donde correr cada cosa
-| Que | Donde |
-|---|---|
-| Todo lo pesado (descarga ~6 GB, entrenamiento, evaluacion) | **Google Colab con GPU T4** -> `notebooks/Colab_Pipeline.ipynb` (alternativa: Kaggle con GPU, mismos comandos) |
-| Prueba rapida del codigo (sin GPU ni descargas) | tu PC: `python tests/smoke_test.py` y `python tests/test_eval.py` |
-| Informe | Overleaf: sube la carpeta `report/` |
+## ¿De qué trata?
 
-Desde la raiz del repo, los modulos se llaman con `PYTHONPATH=src python -m cct.<modulo>` (el notebook ya lo configura).
+Las cámaras trampa toman miles de fotos y revisarlas a mano es lento. Entrenamos un detector **YOLOv8s** sobre el conjunto público
+[Caltech Camera Traps (CCT-20, LILA BC)](https://lila.science/datasets/caltech-camera-traps) para encontrar animales de 15 categorías, y estudiamos lo que más importa en la práctica:
 
-## Pasos (Colab)
-1. Sube el repo a GitHub (ver abajo) o `cct_yolo.zip` a tu Drive.
-2. Abre `notebooks/Colab_Pipeline.ipynb` en Colab, activa GPU y ejecuta las celdas en orden.
-3. Los resultados quedan en `MyDrive/cct_yolo_out/` (pesos, tablas CSV/LaTeX, figuras).
-4. Copia tablas y figuras a `report/` y reemplaza los `\TODO{}` del informe con tus numeros.
+1. **¿Funciona en cámaras que nunca vio?** (partición oficial `eccv_train` / `eccv_val`).
+2. **¿Qué pasa con las especies raras?** (efecto del desbalance).
+3. **¿Qué tanto afectan el tamaño del animal, el truncamiento y la oclusión?**
+4. **¿Se puede convertir el detector en un reporte de actividad por especie y periodo?**
 
-## Entregable -> archivo
-| # | Entregable | Codigo | Salida (en `reports/`) |
+El informe del trabajo está en `report/main.tex` (se compila en Overleaf).
+
+## Resultados principales
+
+| Conjunto | Imágenes | mAP@0.5 | mAP@0.5:0.95 | Recall (conf. 0.25) |
+|---|---:|---:|---:|---:|
+| Cámaras vistas (`test_seen`) | 2,784 | 0.841 | 0.593 | 0.936 |
+| Cámaras nuevas (`test_unseen`) | 19,497 | 0.462 | 0.314 | 0.739 |
+
+- **Brecha de generalización:** −45.0 % de mAP@0.5 y −47.0 % de mAP@0.5:0.95 al pasar a cámaras nuevas.
+- **Desbalance:** AP@0.5 de especies comunes vs. raras = 0.914 vs. 0.696 (cámaras vistas) y 0.637 vs. 0.149 (cámaras nuevas).
+- **Robustez (cámaras nuevas):** tamaño pequeño vs. grande: −34.8 % de mAP@0.5:0.95. Cajas cortadas por el borde vs. completas: −58.2 % de mAP@0.5. El proxy de oclusión no mostró caída (no está validado).
+- **Grad-CAM:** evidencia mixta sobre el uso del fondo (ver informe). Al tapar al animal, el modelo casi no sigue detectándolo.
+- **Monitoreo (cámara 100, no vista):** detecta 10 de las 11 especies presentes; la tasa de fotos vacías del reporte no es fiable.
+- **Limitación importante:** casi todas las fotos vacías (94–96 %) reciben alguna detección a confianza 0.25.
+
+Todas las tablas y figuras están en [`results/`](results/) y los números exactos en `results/tables/*.csv`.
+
+## Cómo ejecutarlo paso a paso (Google Colab, recomendado)
+
+No necesitas descargar datos a tu PC: el notebook los baja solo a Colab.
+
+1. Abre Colab y elige **Archivo → Abrir cuaderno → GitHub**, pega `SalvadorCT/cct-yolo` y abre `notebooks/Colab_Pipeline.ipynb`.
+2. **Entorno de ejecución → Cambiar tipo de entorno** y elige una GPU (T4 sirve; L4 o A100 si tienes Colab Pro).
+3. En la celda 1 escribe tu URL: `REPO_URL = 'https://github.com/SalvadorCT/cct-yolo.git'`.
+4. Ejecuta las celdas **en orden, una por una**:
+   - 0: verifica la GPU y monta Google Drive (los resultados se guardan en `MyDrive/cct_yolo_out/`).
+   - 1: clona el repo e instala las dependencias.
+   - 2: descarga CCT-20 desde LILA (~6 GB, tarda un rato).
+   - 3–4: revisa el JSON de particiones y construye el dataset en formato YOLO.
+   - 5: entrena (30 épocas ≈ 1.2 h en una A100; añade `train.epochs=30 train.workers=4 train.batch=32` al comando).
+   - 6: evaluación por especie. 7: generalización y Grad-CAM. 8: robustez. 9: monitoreo. 10: comprime los resultados.
+5. Descarga `reports.zip` desde tu Drive. Si algo falla con `No module named 'cct'`, ejecuta:
+   ```python
+   import os; os.chdir('/content/cct_yolo'); os.environ['PYTHONPATH'] = '/content/cct_yolo/src'
+   ```
+
+Cualquier parámetro se cambia sin editar código con `--set clave=valor`, por ejemplo `--set train.epochs=5`.
+
+## Cómo probar el código sin GPU ni descargas
+
+Hay una prueba con datos sintéticos (tarda unos minutos en CPU):
+
+```bash
+pip install -r requirements.txt
+python tests/test_eval.py      # pruebas unitarias de las métricas y del monitoreo
+python tests/smoke_test.py     # pipeline completo con imágenes sintéticas
+```
+
+## Estructura del repositorio
+
+```
+configs/config.yaml        # todos los parámetros (semilla, rutas, entrenamiento, evaluación, monitoreo)
+notebooks/Colab_Pipeline.ipynb   # flujo completo para Colab
+src/cct/
+  download.py              # descarga de LILA BC
+  build_dataset.py         # COCO Camera Traps -> formato YOLO, particiones sin fuga por secuencia
+  train.py                 # entrenamiento YOLOv8 y registro de decisiones (decisions.json)
+  inference.py, eval_utils.py, evaluate.py   # predicción y métricas (mAP por especie, desbalance)
+  gradcam.py, generalization.py              # Grad-CAM propio y análisis cámaras vistas vs. nuevas
+  occlusion.py, robustness.py                # proxy de oclusión y robustez por tamaño/oclusión/truncamiento
+  monitoring.py            # reporte de actividad por especie y periodo
+scripts/                   # descarga, regeneración del notebook y de las tablas del informe
+tests/                     # pruebas unitarias y prueba de humo con datos sintéticos
+results/                   # tablas (CSV/LaTeX), figuras, reporte de monitoreo y decisions.json de nuestra corrida
+report/                    # informe en LaTeX (main.tex, refs.bib, imagenes/, tablas/)
+```
+
+## ¿Qué entregable está dónde?
+
+| # | Entregable | Código | Resultados |
 |---|---|---|---|
-| 1 | YOLO fine-tuned y decisiones (resolucion, aumentos, vacias como fondo) | `train.py`, `build_dataset.py`, `configs/config.yaml` | `runs/<nombre>/decisions.json` |
-| 2 | mAP@0.5 y @0.5:0.95 por especie, efecto del desbalance | `evaluate.py` | `tables/summary.csv`, `per_class_*.csv/.tex`, `common_vs_rare_*.csv`, `figures/ap_vs_train_instances_*.png` |
-| 3 | Generalizacion eccv_train / eccv_val + Grad-CAM | `generalization.py`, `gradcam.py` | `tables/generalization_*.csv`, `figures/gradcam_seen_vs_unseen.png` |
-| 4 | Robustez por oclusion y tamano | `occlusion.py`, `robustness.py` | `tables/robustness_*.csv`, `figures/robustness_groups.png` |
-| 5 | Modulo de monitoreo ecologico | `monitoring.py` | `monitoring/loc<id>_{activity,summary}_*.csv`, `_report.md`, `.png` |
-| 6 | Discusion de IA responsable | - | `report/main.tex` |
+| 1 | YOLO ajustado y decisiones (resolución, aumentos, vacías como fondo) | `train.py`, `build_dataset.py` | `results/decisions.json` |
+| 2 | mAP@0.5 y @0.5:0.95 por especie, efecto del desbalance | `evaluate.py` | `results/tables/per_class_*`, `common_vs_rare_*`, `summary.csv` |
+| 3 | Generalización eccv_train/eccv_val y Grad-CAM | `generalization.py`, `gradcam.py` | `results/tables/generalization_*`, `results/figures/gradcam_seen_vs_unseen.png` |
+| 4 | Robustez por oclusión y tamaño | `occlusion.py`, `robustness.py` | `results/tables/robustness_*` |
+| 5 | Módulo de monitoreo ecológico con demo | `monitoring.py` | `results/monitoring/` |
+| 6 | Discusión de IA responsable | — | `report/main.tex`, sección 5 |
 
-## Decisiones de diseno (resumen)
-- **Particiones**: `eccv_val` (ubicaciones nuevas) = `test_unseen`. De `eccv_train` se separa por *secuencia* (hash de `seq_id`) val y `test_seen`, para que fotos casi identicas de una rafaga no caigan en train y test.
-- **Imagenes vacias** como fondo (archivo de etiquetas vacio): submuestreadas en train (`train_empty_ratio`), completas en evaluacion para medir falsos positivos.
-- **Desbalance**: repeat-factor sampling (Gupta et al., LVIS) para especies raras, aplicado duplicando lineas de `train.txt`.
-- **Resolucion 640** (las fotos vienen a 1024 px; animales pequenos se pierden con resoluciones menores). Aumentos `strong` vs `baseline` para la ablacion.
-- **Metricas** con pycocotools propio (`eval_utils.py`), AP por clase desde la matriz de precision. Los subgrupos de robustez se evaluan *ignorando* las GT de otros grupos (area fuera de rango).
-- **Oclusion**: CCT20 no trae etiquetas. Se usa un proxy por sustraccion de fondo por camara (ver `occlusion.py`), validable con etiquetas manuales (Spearman). Es una aproximacion, y el informe lo dice.
-- **Grad-CAM** propio sobre la capa 9 (SPPF) del backbone; mide cuanta energia cae dentro de la caja y si el modelo sigue detectando al tapar al animal.
+## Decisiones de diseño
+
+- **Particiones sin fuga:** train/val/`test_seen` se separan por *secuencia* (hash de `seq_id`), no por imagen, porque los cuadros de una ráfaga son casi idénticos. `test_unseen` son las ubicaciones de `eccv_val`.
+- **Imágenes vacías como fondo** (archivo de etiquetas vacío) con un tope respecto a las imágenes con animales.
+- **Desbalance:** *repeat factor sampling* (Gupta et al., 2019).
+- **Resolución 640 px** y aumentos de color/geometría/mosaico (ver `configs/config.yaml`, `train.py`).
+- **Métricas propias** con `pycocotools`; los subgrupos de robustez se evalúan ignorando las cajas de otros grupos.
+- **Oclusión:** CCT-20 no tiene etiquetas de oclusión, así que usamos un proxy por sustracción de fondo (`occlusion.py`); no está validado con etiquetas manuales.
+- **Arquitectura:** usamos YOLOv8 de Ultralytics; lo implementado por nosotros es el pipeline de datos, la evaluación, Grad-CAM, el proxy de oclusión y el monitoreo.
 
 ## Reproducibilidad
-Semilla 42, `deterministic=True`; versiones en `runs/<nombre>/pip_freeze.txt`. Todos los parametros estan en `configs/config.yaml` y se pueden cambiar con `--set clave=valor` (p. ej. `--set train.epochs=5`).
 
-## Subir a GitHub
-```bash
-cd cct_yolo
-git init && git add . && git commit -m "Pregunta 3: pipeline CCT20 + YOLOv8"
-git branch -M main
-git remote add origin https://github.com/TU_USUARIO/cct-yolo.git
-git push -u origin main
-```
-`data/`, `runs/`, `reports/` y `*.pt` estan en `.gitignore` (no se suben).
+Semilla 42 y `deterministic=True`. Las versiones usadas (`torch 2.11`, `ultralytics 8.4.193`, Python 3.13) están en `results/decisions.json`.
+Nuestra corrida: GPU A100, 30 épocas, lote 32, 1.14 h. Los datos y los pesos (`*.pt`) no se suben a GitHub (están en `.gitignore`).
 
-## Datos y licencia
-Caltech Camera Traps, LILA BC (CDLA-Permissive-1.0). Cita: Beery, Van Horn, Perona, *Recognition in Terra Incognita*, ECCV 2018.
+## Datos y referencias
+
+Caltech Camera Traps, LILA BC. Beery, Van Horn y Perona, *Recognition in Terra Incognita*, ECCV 2018 (<https://arxiv.org/abs/1807.04975>).
+La lista completa de referencias está en `report/refs.bib`.
